@@ -215,6 +215,15 @@ export function parseRdf(text: string, format: RdfFormat, baseIRI?: string): Pro
     const parser = new N3.Parser({
       format: n3FormatOf(format),
       baseIRI: baseIRI || undefined,
+      // Without this, n3 renames every blank node (even an explicitly
+      // labeled one like "_:x") with a prefix from a MODULE-LEVEL, process-
+      // lifetime counter that increments across every Parser instance ever
+      // created — so parsing the identical document twice in the same
+      // process yields DIFFERENT blank-node labels (e.g. "b12_x" then
+      // "b13_x"), violating this package's own determinism claim. An empty
+      // blankNodePrefix makes n3 use the document's raw blank-node labels
+      // unmodified, which is what "same input -> same output" requires.
+      blankNodePrefix: '',
     });
     let settled = false;
     parser.parse(

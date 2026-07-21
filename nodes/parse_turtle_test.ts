@@ -60,4 +60,23 @@ describe('ParseTurtle', () => {
     const result = await parseTurtle(ctx, input);
     expect(result.getError()).toContain('exceeds');
   });
+
+  it('assigns the SAME blank-node label across repeated calls with identical input (determinism)', async () => {
+    // Regression test: n3's Parser renames blank nodes using a MODULE-LEVEL,
+    // process-lifetime counter by default (a fresh prefix per Parser
+    // instance), so without blankNodePrefix: '' in lib.ts's parseRdf, this
+    // exact same input previously produced a DIFFERENT label ("b12_x" then
+    // "b13_x") on each successive call within the same process - a real
+    // violation of this package's own "deterministic... no randomness"
+    // claim, caught by adversarial review.
+    const input = new ParseRequest();
+    input.setText('_:x <http://example.org/p> _:y .');
+    const r1 = await parseTurtle(ctx, input);
+    const r2 = await parseTurtle(ctx, input);
+    const r3 = await parseTurtle(ctx, input);
+    expect(r1.getQuadsList()[0].getSubject()!.getValue()).toBe('x');
+    expect(r1.getQuadsList()[0].getObject()!.getValue()).toBe('y');
+    expect(r2.getQuadsList()[0].getSubject()!.getValue()).toBe('x');
+    expect(r3.getQuadsList()[0].getSubject()!.getValue()).toBe('x');
+  });
 });
