@@ -1,0 +1,301 @@
+// Data contracts for christiangeorgelucas/rdf-tools — deterministic parsing,
+// serialization, format-conversion, and structural inspection of RDF /
+// linked-data graphs.
+//
+// The canonical envelope is `Term` (one RDF node — an IRI, blank node, or
+// literal) composed into `Quad` (subject/predicate/object/graph) and
+// `QuadList` (a bag of quads plus the namespace prefixes seen while parsing,
+// if any). Every parse node produces a QuadList; every serialize/inspect
+// node consumes one. This lets any parse feed any inspect/serialize node
+// without reshaping.
+//
+// The algorithmically hard part — Turtle/N-Triples/N-Quads/TriG tokenizing,
+// parsing, and re-serialization — is entirely owned by n3 (MIT,
+// rdfjs/N3.js); JSON-LD expand/compact/toRDF/fromRDF is entirely owned by
+// jsonld.js (BSD-3-Clause, digitalbazaar/jsonld.js). This package adds input
+// bounds, deterministic ordering, proto shaping, and CURIE expand/compact
+// arithmetic over a caller-supplied prefix map (a fixed lookup, not parsing
+// logic), each backed by an independent-oracle test.
+//
+// Offline by construction: JSON-LD nodes are wired with a documentLoader
+// that unconditionally rejects ANY URL (a caller-supplied inline
+// `@context` is the only way to resolve terms) — a remote-context fetch is
+// both an SSRF vector and a network/determinism violation, so it is refused
+// rather than attempted. No node ever dereferences an IRI over the network.
+//
+// Every node's ONLY hard-failure mode is a structured `error` field, set on
+// oversized input, malformed input the caller asked to be parsed strictly,
+// or an internal fault; nodes never throw or crash the process.
+
+syntax = "proto3";
+
+package christiangeorgelucas.rdf_tools;
+
+// One RDF term: an IRI (NamedNode), a blank node, a literal, or — only
+// valid in Quad.graph — the default graph.
+message Term {
+  // "NamedNode" | "BlankNode" | "Literal" | "DefaultGraph".
+  string term_type = 1;
+  // The term's lexical value: the IRI string for NamedNode, the label
+  // (without "_:") for BlankNode, the lexical form for Literal. Empty and
+  // ignored for DefaultGraph.
+  string value = 2;
+  // Literal only: the datatype IRI, e.g.
+  // "http://www.w3.org/2001/XMLSchema#integer". Defaults to
+  // http://www.w3.org/2001/XMLSchema#string when omitted on a plain
+  // literal with no language tag. Empty for non-Literal terms.
+  string datatype = 3;
+  // Literal only: the BCP47 language tag, e.g. "en", set only for a
+  // language-tagged string (mutually exclusive with a non-default
+  // datatype). Empty for non-Literal terms or a literal with no language.
+  string language = 4;
+}
+
+// One RDF triple/quad. `graph` is a DefaultGraph Term for a plain triple
+// (Turtle, N-Triples, or a TriG/N-Quads statement with no named graph), or
+// a NamedNode/BlankNode Term for a quad inside a named graph.
+message Quad {
+  Term subject = 1;
+  Term predicate = 2;
+  Term object = 3;
+  Term graph = 4;
+}
+
+// The canonical envelope: a bag of quads plus the namespace prefixes
+// declared while parsing them (empty for formats with no prefix syntax:
+// N-Triples, N-Quads). Every serialize/inspect node accepts this as input;
+// every parse node produces it as output.
+message QuadList {
+  // Quads in a deterministic order: parse nodes preserve document order
+  // (itself deterministic for identical input); FilterQuads preserves its
+  // input's order; the distinct-term extraction nodes (GetSubjects/
+  // GetPredicates/GetObjects) sort their result independent of appearance
+  // order — see those nodes' own descriptions.
+  repeated Quad quads = 1;
+  // Namespace prefix -> full IRI, as declared with @prefix/PREFIX in the
+  // source document (Turtle/TriG only). Not populated by ParseNTriples/
+  // ParseNQuads (those formats have no prefix syntax).
+  map<string, string> prefixes = 2;
+  // Set (non-empty) iff the operation failed; quads is empty in that case.
+  string error = 3;
+}
+
+// Input for ParseTurtle / ParseNTriples / ParseNQuads / ParseTriG.
+message ParseRequest {
+  // The RDF document source text (UTF-8). Rejected with a structured
+  // "exceeds N bytes" error above 10 MiB, checked on the raw byte length
+  // before any parsing is attempted.
+  string text = 1;
+  // Optional base IRI used to resolve relative IRIs (Turtle/TriG only —
+  // N-Triples/N-Quads require absolute IRIs per spec and never resolve
+  // relative ones; a relative IRI there is a parse error, base_iri or not).
+  string base_iri = 2;
+}
+
+// Input for SerializeTurtle / SerializeNTriples / SerializeNQuads.
+message SerializeRequest {
+  repeated Quad quads = 1;
+  // Namespace prefix -> IRI to use when abbreviating output (Turtle only;
+  // ignored by SerializeNTriples/SerializeNQuads, which have no prefix
+  // syntax). A prefix unused by any quad is simply not emitted.
+  map<string, string> prefixes = 2;
+}
+
+// Output of every Serialize*/ConvertSyntax node.
+message SerializeResult {
+  // The serialized document text. Empty when error is set.
+  string text = 1;
+  string error = 2;
+}
+
+// Input for ConvertSyntax: parse `text` as `from_format`, then serialize the
+// result as `to_format`, preserving every triple/quad exactly.
+message ConvertRequest {
+  string text = 1;
+  // Source syntax: "turtle" | "ntriples" | "nquads" | "trig".
+  string from_format = 2;
+  // Target syntax: "turtle" | "ntriples" | "nquads". (TriG serialization is
+  // not exposed by this package — there is no SerializeTriG node — so
+  // ConvertSyntax only targets a format this package can also
+  // independently produce/verify.)
+  string to_format = 3;
+  // Optional base IRI, same semantics as ParseRequest.base_iri, applied
+  // when parsing (from_format = turtle/trig).
+  string base_iri = 4;
+}
+
+// Input for CountQuads / GetSubjects / GetPredicates / GetObjects — any
+// node whose only input is a quad list with no other parameters.
+message QuadListInput {
+  repeated Quad quads = 1;
+}
+
+// Output of CountQuads.
+message CountResult {
+  // Total quads (== total_triples if none carry a named graph).
+  int32 total_quads = 1;
+  // Count of triples (quads whose graph is the DefaultGraph).
+  int32 total_triples = 2;
+  int32 distinct_subjects = 3;
+  int32 distinct_predicates = 4;
+  int32 distinct_objects = 5;
+  // Count of distinct NAMED graphs (DefaultGraph is not counted here).
+  int32 distinct_graphs = 6;
+  string error = 7;
+}
+
+// A single-term match constraint: unset (has_value = false) means "match
+// any value in this position" (a wildcard); set means the position must
+// equal `term` exactly (all fields: term_type, value, datatype, language).
+message TermFilter {
+  bool has_value = 1;
+  Term term = 2;
+}
+
+// Input for FilterQuads. Every unset filter is a wildcard; all set filters
+// must match simultaneously (logical AND) for a quad to be returned.
+message FilterRequest {
+  repeated Quad quads = 1;
+  TermFilter subject = 2;
+  TermFilter predicate = 3;
+  TermFilter object = 4;
+  TermFilter graph = 5;
+}
+
+// Output of GetSubjects / GetPredicates / GetObjects.
+message TermList {
+  // Distinct terms, sorted deterministically by (term_type, value,
+  // datatype, language) — independent of the input quads' order, so the
+  // same set of terms always serializes identically regardless of how the
+  // source document ordered its statements.
+  repeated Term terms = 1;
+  string error = 2;
+}
+
+// Input for GetPrefixes.
+message GetPrefixesRequest {
+  string text = 1;
+  // "turtle" | "trig" (the only two formats with prefix syntax; ntriples/
+  // nquads always yield an empty map).
+  string format = 2;
+}
+
+// Output of GetPrefixes.
+message PrefixResult {
+  map<string, string> prefixes = 1;
+  string error = 2;
+}
+
+// Input for ExpandCurie.
+message ExpandCurieRequest {
+  // A prefixed name, e.g. "foaf:knows", or a bare/already-absolute IRI
+  // (returned unchanged in that case).
+  string curie = 1;
+  map<string, string> prefixes = 2;
+}
+
+// Output of ExpandCurie.
+message ExpandCurieResult {
+  string iri = 1;
+  // True iff a prefix substitution actually happened (curie had a
+  // "prefix:local" form and prefix was found in the map). False (with iri
+  // == input curie) when curie had no colon-prefix form, or its prefix
+  // wasn't in the map — never an error, since "not a CURIE" is a valid,
+  // common case (an already-absolute IRI passed straight through).
+  bool expanded = 2;
+  string error = 3;
+}
+
+// Input for CompactIri.
+message CompactIriRequest {
+  string iri = 1;
+  map<string, string> prefixes = 2;
+}
+
+// Output of CompactIri.
+message CompactIriResult {
+  // The compacted "prefix:localname" form, or the original iri unchanged
+  // if no prefix in the map is a prefix of it.
+  string curie = 1;
+  // True iff a prefix match was found and curie is genuinely compacted.
+  bool compacted = 2;
+  // Which prefix (map key) was used — the LONGEST matching namespace IRI,
+  // to produce the most specific compaction when more than one prefix's
+  // namespace is a prefix of iri. Empty when compacted is false.
+  string matched_prefix = 3;
+  string error = 4;
+}
+
+// Input for JsonLdExpand / JsonLdToRdf.
+message JsonLdExpandRequest {
+  // A JSON-LD document, as JSON text.
+  string document_json = 1;
+  // Optional context, as JSON text (an object, or an array of objects),
+  // used ONLY if document_json's own "@context" is absent AND this is
+  // non-empty — mirrors jsonld.js's own expandContext option. This
+  // package NEVER dereferences a "@context" that is a URL string: the
+  // JSON-LD document loader is disabled entirely, so a remote/string
+  // context reference fails with a structured error rather than being
+  // fetched. Supply the context's contents inline here (or inline inside
+  // document_json's own "@context") instead of a URL.
+  string context_json = 2;
+}
+
+// Output of JsonLdExpand / JsonLdFromRdf.
+message JsonLdResult {
+  // The result document, as JSON text (expanded form, or a compacted
+  // JSON-LD document from RDF).
+  string result_json = 1;
+  string error = 2;
+}
+
+// Input for JsonLdCompact.
+message JsonLdCompactRequest {
+  string document_json = 1;
+  // Required: the context to compact against, as JSON text (an object, or
+  // an array of objects/strings — but see JsonLdExpandRequest.context_json:
+  // a context that is (or contains) a URL string is rejected, since remote
+  // dereferencing is disabled).
+  string context_json = 2;
+}
+
+// Input for JsonLdToRdf.
+message JsonLdToRdfRequest {
+  string document_json = 1;
+  // Same semantics as JsonLdExpandRequest.context_json.
+  string context_json = 2;
+}
+
+// Input for JsonLdFromRdf.
+message JsonLdFromRdfRequest {
+  // An N-Quads document (the same syntax ParseNQuads/SerializeNQuads use).
+  string nquads_text = 1;
+}
+
+// Input for ValidateRdf.
+message ValidateRequest {
+  string text = 1;
+  // "turtle" | "ntriples" | "nquads" | "trig".
+  string format = 2;
+}
+
+// Output of ValidateRdf.
+message ValidateResult {
+  // True iff the document parses with zero errors under the given format.
+  bool valid = 1;
+  // Human-readable description of the first parse error encountered.
+  // Empty when valid is true.
+  string error_message = 2;
+  // 1-based line of the first parse error. 0 when valid is true or a line
+  // could not be determined.
+  int32 line = 3;
+  // 1-based column of the first parse error, approximated from the
+  // offending token's offset within its line. 0 when valid is true or a
+  // column could not be determined.
+  int32 column = 4;
+  // Set only for a hard failure unrelated to document syntax (oversized
+  // input, unrecognized `format`) — never for the syntax errors this node
+  // exists to report; those land in valid/error_message/line/column
+  // instead.
+  string error = 5;
+}

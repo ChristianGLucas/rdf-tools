@@ -1,0 +1,235 @@
+name: christiangeorgelucas/rdf-tools
+version: 0.1.0
+language: typescript
+description: >-
+  Composable Axiom RDF/linked-data nodes over a single Term/Quad/QuadList
+  envelope — parse Turtle, N-Triples, N-Quads, and TriG into a normalized
+  quad list; serialize back to Turtle, N-Triples, or N-Quads; convert
+  between syntaxes; count, filter, and extract distinct
+  subjects/predicates/objects/prefixes; expand and compact CURIEs against
+  a caller-supplied prefix map; and JSON-LD expand, compact, and convert
+  to/from RDF (N-Quads) — wrapping n3 (rdfjs/N3.js, MIT) and jsonld.js
+  (digitalbazaar/jsonld.js, BSD-3-Clause). Offline by construction — every
+  JSON-LD node's document loader unconditionally refuses to dereference
+  any URL, so a remote "@context" is never fetched; supply context
+  contents inline. Pure text/structure in -> text/structure out,
+  deterministic (distinct-term extraction is sorted independent of input
+  order), no network, no wall-clock, no randomness; malformed input
+  returns a structured error, never a crash; input is bounded by byte
+  size and quad count.
+author: Christian George Lucas
+license: MIT
+tags:
+    - rdf
+    - linked-data
+    - turtle
+    - n-triples
+    - n-quads
+    - trig
+    - json-ld
+    - triples
+    - quads
+    - semantic-web
+    - curie
+    - n3
+nodes:
+    - name: ParseTurtle
+      input: ParseRequest
+      output: QuadList
+      description: >-
+        Parse a Turtle (text/turtle) document into a normalized list of
+        quads (every graph term is DefaultGraph) plus the namespace
+        prefixes declared with @prefix. Relative IRIs resolve against
+        base_iri or the document's own @base. Malformed Turtle returns a
+        structured error, never a partial result. Wraps n3 (MIT).
+    - name: ParseNTriples
+      input: ParseRequest
+      output: QuadList
+      description: >-
+        Parse an N-Triples (application/n-triples) document into a
+        normalized list of quads (every graph term is DefaultGraph;
+        N-Triples has no named-graph syntax). prefixes is always empty —
+        N-Triples has no prefix syntax. Every IRI must be absolute per
+        spec; a relative IRI is a parse error regardless of base_iri.
+        Malformed input returns a structured error. Wraps n3 (MIT).
+    - name: ParseNQuads
+      input: ParseRequest
+      output: QuadList
+      description: >-
+        Parse an N-Quads (application/n-quads) document into a normalized
+        list of quads — a statement's optional 4th term becomes the
+        quad's NamedNode/BlankNode graph; a 3-term statement's graph is
+        DefaultGraph. prefixes is always empty. Every IRI must be
+        absolute per spec; a relative IRI is a parse error regardless of
+        base_iri. Malformed input returns a structured error. Wraps n3
+        (MIT).
+    - name: ParseTriG
+      input: ParseRequest
+      output: QuadList
+      description: >-
+        Parse a TriG (application/trig) document into a normalized list
+        of quads — statements inside a "graphLabel { ... }" block get
+        that label as their graph term; statements outside any block get
+        DefaultGraph — plus the namespace prefixes declared with @prefix.
+        Relative IRIs resolve against base_iri or the document's own
+        @base. Malformed TriG returns a structured error, never a
+        partial result. Wraps n3 (MIT).
+    - name: SerializeTurtle
+      input: SerializeRequest
+      output: SerializeResult
+      description: >-
+        Serialize a quad list to Turtle (text/turtle) source text.
+        prefixes abbreviates matching IRIs as "prefix:local"; anything
+        else is written as a full "<...>" IRI. A quad's named graph (if
+        any) is dropped — Turtle has no named-graph syntax; use
+        SerializeNQuads to preserve it. Deterministic byte-identical
+        output for the same input. Wraps n3 (MIT).
+    - name: SerializeNTriples
+      input: SerializeRequest
+      output: SerializeResult
+      description: >-
+        Serialize a quad list to N-Triples (application/n-triples) source
+        text — one absolute-IRI/blank-node/literal triple per line, no
+        prefix abbreviation (prefixes is ignored). A quad's named graph
+        (if any) is dropped. Deterministic byte-identical output for the
+        same input. Wraps n3 (MIT).
+    - name: SerializeNQuads
+      input: SerializeRequest
+      output: SerializeResult
+      description: >-
+        Serialize a quad list to N-Quads (application/n-quads) source
+        text — one quad per line, with a 4th (graph) term on lines whose
+        graph is a NamedNode/BlankNode. The only Serialize* node here
+        that preserves a named graph. No prefix abbreviation (prefixes is
+        ignored). Deterministic byte-identical output for the same
+        input. Wraps n3 (MIT).
+    - name: ConvertSyntax
+      input: ConvertRequest
+      output: SerializeResult
+      description: >-
+        Convert an RDF document from one syntax to another in a single
+        call (parse as from_format, serialize as to_format), preserving
+        every triple/quad. from_format is turtle/ntriples/nquads/trig;
+        to_format is turtle/ntriples/nquads (no TriG serializer is
+        exposed). Converting a named-graph format to one without
+        named-graph syntax drops the graph on each such quad; the
+        triples themselves are preserved. Wraps n3 (MIT).
+    - name: CountQuads
+      input: QuadListInput
+      output: CountResult
+      description: >-
+        Count a quad list: total quads, total plain triples (DefaultGraph
+        quads), and the number of DISTINCT subjects, predicates, objects,
+        and named graphs (full term identity — type, value, and for a
+        Literal also datatype/language). A quick size/shape summary
+        without materializing the full distinct-term lists.
+    - name: FilterQuads
+      input: FilterRequest
+      output: QuadList
+      description: >-
+        Return every quad matching per-position constraints — subject,
+        predicate, object, and/or graph — where an unset constraint
+        (has_value=false) matches anything and a set one must equal that
+        position's term exactly. All given constraints AND together;
+        preserves input order. The composable building block for "every
+        quad about X" / "every quad using predicate P" queries.
+    - name: GetSubjects
+      input: QuadListInput
+      output: TermList
+      description: >-
+        Extract every DISTINCT subject term (a NamedNode or BlankNode,
+        never a Literal) across a quad list, deduplicated and sorted
+        deterministically by (term_type, value) independent of the
+        quads' own order.
+    - name: GetPredicates
+      input: QuadListInput
+      output: TermList
+      description: >-
+        Extract every DISTINCT predicate term (always a NamedNode/IRI)
+        across a quad list, deduplicated and sorted deterministically by
+        IRI value — a quick "what vocabulary does this document use"
+        summary.
+    - name: GetObjects
+      input: QuadListInput
+      output: TermList
+      description: >-
+        Extract every DISTINCT object term (NamedNode, BlankNode, or
+        Literal — the only position a Literal can occupy) across a quad
+        list, each typed via term_type and, for a Literal, its
+        datatype/language, deduplicated and sorted deterministically
+        independent of the quads' own order.
+    - name: GetPrefixes
+      input: GetPrefixesRequest
+      output: PrefixResult
+      description: >-
+        Extract the @prefix namespace declarations from a Turtle or TriG
+        document without materializing its quads. format must be turtle
+        or trig (the only syntaxes with prefix declarations) — ntriples/
+        nquads are rejected with a structured error. A document with zero
+        prefixes returns an empty map. Wraps n3 (MIT).
+    - name: ExpandCurie
+      input: ExpandCurieRequest
+      output: ExpandCurieResult
+      description: >-
+        Expand a CURIE ("prefix:local") to its full IRI using a
+        caller-supplied prefix map — a fixed lookup, not a document
+        parse. An already-absolute IRI, or one whose prefix isn't in the
+        map, is returned unchanged with expanded=false rather than an
+        error — never fails on malformed input.
+    - name: CompactIri
+      input: CompactIriRequest
+      output: CompactIriResult
+      description: >-
+        Compact a full IRI to "prefix:local" using the LONGEST matching
+        namespace IRI in a caller-supplied prefix map (the inverse of
+        ExpandCurie; the most specific prefix wins when more than one
+        namespace matches). An iri with no matching prefix is returned
+        unchanged with compacted=false — never fails on malformed input.
+    - name: JsonLdExpand
+      input: JsonLdExpandRequest
+      output: JsonLdResult
+      description: >-
+        JSON-LD "expand" a document: resolve every term to a full IRI and
+        normalize into the fully-expanded array form. context_json is
+        used only when document_json has no "@context" of its own.
+        OFFLINE BY CONSTRUCTION — the document loader refuses every URL,
+        so a remote "@context" is never fetched; supply context contents
+        inline. Wraps jsonld.js (BSD-3-Clause).
+    - name: JsonLdCompact
+      input: JsonLdCompactRequest
+      output: JsonLdResult
+      description: >-
+        JSON-LD "compact" a document against a REQUIRED context: rewrite
+        full IRIs back to short terms/prefixes and collapse single-
+        element arrays (the inverse of JsonLdExpand). OFFLINE BY
+        CONSTRUCTION — the document loader refuses every URL, so a remote
+        context_json is never fetched; supply its contents inline. Wraps
+        jsonld.js (BSD-3-Clause).
+    - name: JsonLdToRdf
+      input: JsonLdToRdfRequest
+      output: SerializeResult
+      description: >-
+        Convert a JSON-LD document to RDF, returned as N-Quads source
+        text (feed into ParseNQuads for this package's QuadList form).
+        context_json is used only when document_json has no "@context"
+        of its own. OFFLINE BY CONSTRUCTION — the document loader refuses
+        every URL. Wraps jsonld.js (BSD-3-Clause).
+    - name: JsonLdFromRdf
+      input: JsonLdFromRdfRequest
+      output: JsonLdResult
+      description: >-
+        Convert an N-Quads document to JSON-LD (the reverse of
+        JsonLdToRdf), returned in EXPANDED form (no context to compact
+        against — pipe result_json into JsonLdCompact with your own
+        context for a compact form). Performs no network I/O. Wraps
+        jsonld.js (BSD-3-Clause).
+    - name: ValidateRdf
+      input: ValidateRequest
+      output: ValidateResult
+      description: >-
+        Check whether a document is well-formed RDF under the given
+        syntax (turtle/ntriples/nquads/trig): valid=true iff a full parse
+        succeeds. On failure, valid=false plus error_message and a
+        1-based line/column of the first error. The generic `error` field
+        is reserved for a hard failure unrelated to document syntax
+        (oversized input, unrecognized format). Wraps n3 (MIT).
