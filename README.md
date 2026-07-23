@@ -1,6 +1,6 @@
 # rdf-tools
 
-Composable [Axiom](https://axiom.dev) nodes for deterministic parsing, serialization,
+Composable [Axiom](https://axiomide.com) nodes for deterministic parsing, serialization,
 format-conversion, and structural inspection of RDF / linked-data graphs. Built for the
 Axiom marketplace under the `christiangeorgelucas` handle.
 
