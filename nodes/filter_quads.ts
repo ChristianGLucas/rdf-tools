@@ -1,6 +1,6 @@
 import { FilterRequest, QuadList, Quad, Term, TermFilter } from '../gen/messages_pb';
 import { AxiomContext } from '../gen/axiomContext';
-import { checkQuadCount, termSortKeyForCount, errorMessage } from './lib';
+import { termSortKeyForCount, errorMessage } from './lib';
 
 function matches(filter: TermFilter | undefined, actual: Term | undefined): boolean {
   if (!filter || !filter.getHasValue()) return true; // wildcard
@@ -25,7 +25,6 @@ export function filterQuads(ax: AxiomContext, input: FilterRequest): QuadList {
   const out = new QuadList();
   try {
     const quads = input.getQuadsList();
-    checkQuadCount(quads.length);
     const subjectFilter = input.getSubject();
     const predicateFilter = input.getPredicate();
     const objectFilter = input.getObject();

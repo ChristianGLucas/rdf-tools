@@ -1,6 +1,6 @@
 import { JsonLdFromRdfRequest, JsonLdResult } from '../gen/messages_pb';
 import { AxiomContext } from '../gen/axiomContext';
-import { jsonld, checkBytes, MAX_TEXT_BYTES, errorMessage } from './lib';
+import { jsonld, errorMessage } from './lib';
 
 /**
  * Convert an N-Quads document to JSON-LD (the reverse of JsonLdToRdf) —
@@ -10,10 +10,9 @@ import { jsonld, checkBytes, MAX_TEXT_BYTES, errorMessage } from './lib';
  * compact form instead. Every graph in the input becomes a top-level
  * "@graph" entry named by its graph IRI/blank-node id; default-graph
  * quads become top-level nodes directly. Malformed N-Quads returns a
- * structured error. Input capped at 10 MiB. Wraps jsonld.js
- * (digitalbazaar/jsonld.js, BSD-3-Clause) — this node performs no network
- * I/O (fromRDF never dereferences anything; there is no context to
- * resolve).
+ * structured error. Wraps jsonld.js (digitalbazaar/jsonld.js, BSD-3-Clause)
+ * — this node performs no network I/O (fromRDF never dereferences
+ * anything; there is no context to resolve).
  *
  * @param ax - Platform context: ax.log for logging, ax.secrets for secrets.
  */
@@ -21,7 +20,6 @@ export async function jsonLdFromRdf(ax: AxiomContext, input: JsonLdFromRdfReques
   const out = new JsonLdResult();
   try {
     const nquads = input.getNquadsText();
-    checkBytes(nquads, 'nquads_text', MAX_TEXT_BYTES);
     const expanded = await jsonld.fromRDF(nquads, { format: 'application/n-quads' });
     out.setResultJson(JSON.stringify(expanded));
     return out;

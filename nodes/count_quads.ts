@@ -1,6 +1,6 @@
 import { QuadListInput, CountResult } from '../gen/messages_pb';
 import { AxiomContext } from '../gen/axiomContext';
-import { checkQuadCount, termSortKeyForCount, errorMessage } from './lib';
+import { termSortKeyForCount, errorMessage } from './lib';
 
 /**
  * Count a quad list: total quads, total plain triples (quads whose graph
@@ -18,7 +18,6 @@ export function countQuads(ax: AxiomContext, input: QuadListInput): CountResult 
   const out = new CountResult();
   try {
     const quads = input.getQuadsList();
-    checkQuadCount(quads.length);
     const subjects = new Set<string>();
     const predicates = new Set<string>();
     const objects = new Set<string>();

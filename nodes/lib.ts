@@ -17,42 +17,7 @@ import * as N3 from 'n3';
 const jsonld = require('jsonld');
 import { Term, Quad, QuadList } from '../gen/messages_pb';
 
-/** Ceiling for any raw RDF document (ParseRequest.text, SerializeRequest's
- * total, ConvertRequest.text, GetPrefixesRequest.text, ValidateRequest.text,
- * JsonLdFromRdfRequest.nquads_text). 10 MiB - far beyond any realistic RDF
- * document exchanged over an API call, comfortably under typical gateway
- * body caps. */
-export const MAX_TEXT_BYTES = 10_000_000;
-
-/** Ceiling for a JSON-LD document or context string
- * (JsonLd*Request.document_json / context_json). 10 MiB, same rationale. */
-export const MAX_JSON_BYTES = 10_000_000;
-
-/** Ceiling on the number of quads any node will parse or accept as input.
- * Applied AFTER parsing (n3's own streaming parser has no separate
- * pre-check, but is checked incrementally as quads are produced so an
- * over-count aborts without holding the full oversized result) and as a
- * simple array-length check on any node accepting a QuadList/quads field
- * directly. High enough for any realistic document (1M quads is already an
- * unusually large RDF payload for a synchronous API call) while bounding
- * memory and output size. */
-export const MAX_QUADS = 1_000_000;
-
 export class BoundsError extends Error {}
-
-/** Rejects oversized input (by UTF-8 byte length, not JS string length). */
-export function checkBytes(value: string, field: string, max: number): void {
-  if (Buffer.byteLength(value, 'utf8') > max) {
-    throw new BoundsError(`${field} exceeds ${max} bytes`);
-  }
-}
-
-/** Rejects an input quad array beyond MAX_QUADS. */
-export function checkQuadCount(count: number, field = 'quads'): void {
-  if (count > MAX_QUADS) {
-    throw new BoundsError(`${field} exceeds ${MAX_QUADS} quads`);
-  }
-}
 
 /** Turns a caught value into a stable error message. */
 export function errorMessage(e: unknown, context: string): string {
@@ -195,12 +160,8 @@ export interface ParsedDocument {
 }
 
 /** Parses RDF source text of the given format into quads + prefixes.
- * Applies the byte-size bound before parsing and the quad-count bound
- * incrementally while parsing (so a maliciously huge quad count aborts
- * without first materializing an oversized array). Rejects with
- * BoundsError or the underlying n3 parse error (both are plain Error
- * subclasses with a `.message`; n3's own parse errors additionally carry
- * `.context.line`).
+ * Rejects with the underlying n3 parse error (a plain Error subclass with
+ * a `.message`; n3's own parse errors additionally carry `.context.line`).
  *
  * IMPORTANT: n3's Parser#parse delivers quads via its callback
  * ASYNCHRONOUSLY (each call is scheduled on a later tick, even for a
@@ -208,7 +169,6 @@ export interface ParsedDocument {
  * call) — this MUST be awaited; reading `quads`/`prefixes` immediately
  * after calling parser.parse() synchronously always observes them empty. */
 export function parseRdf(text: string, format: RdfFormat, baseIRI?: string): Promise<ParsedDocument> {
-  checkBytes(text, 'text', MAX_TEXT_BYTES);
   return new Promise((resolve, reject) => {
     const quads: N3.Quad[] = [];
     const prefixes: Record<string, string> = {};
@@ -236,11 +196,6 @@ export function parseRdf(text: string, format: RdfFormat, baseIRI?: string): Pro
           return;
         }
         if (quad) {
-          if (quads.length >= MAX_QUADS) {
-            settled = true;
-            reject(new BoundsError(`document exceeds ${MAX_QUADS} quads`));
-            return;
-          }
           quads.push(quad);
         } else {
           // n3 signals completion with a final (null, null) callback.
@@ -265,7 +220,6 @@ export function serializeRdf(
   format: RdfFormat,
   prefixes?: Record<string, string>
 ): Promise<string> {
-  checkQuadCount(quads.length);
   return new Promise((resolve, reject) => {
     const options: N3.WriterOptions = { format: n3FormatOf(format) };
     if (format === 'turtle' && prefixes && Object.keys(prefixes).length > 0) {
@@ -353,10 +307,8 @@ export const noNetworkDocumentLoader = async (url: string): Promise<never> => {
   throw new Error(`remote document/context loading is disabled (rdf-tools is offline-only); refused to load "${url}"`);
 };
 
-/** Parses a JSON string with a byte-size bound applied first. Throws
- * BoundsError on oversized input or invalid JSON. */
+/** Parses a JSON string. Throws BoundsError on invalid JSON. */
 export function parseJsonBounded(text: string, field: string): unknown {
-  checkBytes(text, field, MAX_JSON_BYTES);
   try {
     return JSON.parse(text);
   } catch (e) {
@@ -448,9 +400,7 @@ export function jspbMapToRecord(map: { toArray(): Array<[string, string]> }): Re
   return out;
 }
 
-/** Converts an array of proto Quad into rdfjs quads, applying the input
- * quad-count bound first. */
+/** Converts an array of proto Quad into rdfjs quads. */
 export function protoQuadsToRdf(quads: Quad[]): N3.Quad[] {
-  checkQuadCount(quads.length);
   return quads.map(protoToRdfQuad);
 }

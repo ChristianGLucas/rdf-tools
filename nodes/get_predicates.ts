@@ -1,6 +1,6 @@
 import { QuadListInput, TermList, Term } from '../gen/messages_pb';
 import { AxiomContext } from '../gen/axiomContext';
-import { checkQuadCount, distinctSortedTerms, errorMessage } from './lib';
+import { distinctSortedTerms, errorMessage } from './lib';
 
 /**
  * Extract every DISTINCT predicate term across a quad list — always a
@@ -15,7 +15,6 @@ export function getPredicates(ax: AxiomContext, input: QuadListInput): TermList 
   const out = new TermList();
   try {
     const quads = input.getQuadsList();
-    checkQuadCount(quads.length);
     const terms: Term[] = quads.map((q) => q.getPredicate()).filter((t): t is Term => !!t);
     out.setTermsList(distinctSortedTerms(terms));
     return out;

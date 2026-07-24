@@ -37,10 +37,10 @@ describe('JsonLdFromRdf', () => {
     expect(result.getError()).not.toBe('');
   });
 
-  it('rejects oversized input', async () => {
+  it('handles a large malformed input as a structured error, not a crash', async () => {
     const input = new JsonLdFromRdfRequest();
     input.setNquadsText('x'.repeat(10_000_001));
     const result = await jsonLdFromRdf(ctx, input);
-    expect(result.getError()).toContain('exceeds');
+    expect(result.getError()).not.toBe('');
   });
 });

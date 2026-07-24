@@ -54,11 +54,12 @@ describe('ParseTurtle', () => {
     expect(result.getQuadsList()).toHaveLength(0);
   });
 
-  it('rejects oversized input with a structured error', async () => {
+  it('handles a large (multi-MB) well-formed input without crashing', async () => {
     const input = new ParseRequest();
     input.setText('<http://example.org/s> <http://example.org/p> "' + 'x'.repeat(10_000_001) + '" .');
     const result = await parseTurtle(ctx, input);
-    expect(result.getError()).toContain('exceeds');
+    expect(result.getError()).toBe('');
+    expect(result.getQuadsList()).toHaveLength(1);
   });
 
   it('assigns the SAME blank-node label across repeated calls with identical input (determinism)', async () => {
